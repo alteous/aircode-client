@@ -144,7 +144,8 @@ fn update_helper(project_name: &str, path: &path::Path, whitelist: &[String]) {
 
 fn main_loop(project_name: &str, whitelist: &[String]) {
     let (tx, rx) = channel();
-    let mut watcher = notify::watcher(tx, Duration::from_secs(1)).unwrap();
+    let poll_delay = Duration::from_millis(250); // Poll every quarter of a second.
+    let mut watcher = notify::watcher(tx, poll_delay).unwrap();
     watcher.watch("project", notify::RecursiveMode::Recursive).unwrap();
     loop {
         match rx.recv() {
