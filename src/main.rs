@@ -39,12 +39,12 @@ fn read_to_string<P>(path: P) -> io::Result<String>
     Ok(contents)
 }
 
-fn update(project_name: &str, file_name: &str) {
+fn update(project_name: &str, basename: &str) {
     let url = format!("{}/projects/{}/__update", REMOTE_URL, project_name);
     println!("POST {}", url);
-    let path = format!("project/{}.lua", file_name);
+    let path = format!("project/{}.lua", basename);
     let code = read_to_string(&path).unwrap();
-    let body = json::stringify(object! { "contents" => code, "file" => file_name });
+    let body = json::stringify(object! { "contents" => code, "file" => basename });
     let client = reqwest::Client::new();
     let request = client.post(&url).body(body).build().unwrap();
     println!("{:#?}", request);
@@ -82,10 +82,10 @@ fn load(project_name: &str) -> Vec<String> {
     whitelist
 }
 
-fn read(project_name: &str, file_name: &str) {
+fn read(project_name: &str, basename: &str) {
     use io::Write;
 
-    let url = format!("{}/projects/{}/{}", REMOTE_URL, project_name, file_name);
+    let url = format!("{}/projects/{}/{}", REMOTE_URL, project_name, basename);
     println!("GET {}", &url);
     let mut response = reqwest::get(&url).unwrap();
     let text = response.text().unwrap();
@@ -95,7 +95,7 @@ fn read(project_name: &str, file_name: &str) {
     let selector = scraper::Selector::parse("div#editor").unwrap();
     let node = document.select(&selector).next().unwrap();
     let code = node.inner_html();
-    let path = format!("project/{}.lua", file_name);
+    let path = format!("project/{}.lua", basename);
     let mut file = fs::File::create(&path).unwrap();
     file.write_all(code.as_bytes()).unwrap();
 }
@@ -103,13 +103,24 @@ fn read(project_name: &str, file_name: &str) {
 fn clear() {
     fs::remove_dir_all("project").unwrap();
     fs::create_dir("project").unwrap();
+    fs::File::create("project/restart").unwrap();
 }
 
-fn _restart(project_name: &str) {
+fn restart(project_name: &str) {
     let url = format!("{}/projects/{}/__restart", REMOTE_URL, project_name);
     println!("GET {}", &url);
     let response = reqwest::get(&url).unwrap();
     println!("{:#?}", response);
+}
+
+fn restart_helper(project_name: &str, path: &path::Path) {
+    if let Some(os_str) = path.file_name() {
+        if let Some(name) = os_str.to_str() {
+            if name == "restart" {
+                restart(project_name);
+            }
+        }
+    }
 }
 
 fn main_loop(project_name: &str, whitelist: &[String]) {
@@ -120,20 +131,35 @@ fn main_loop(project_name: &str, whitelist: &[String]) {
         match rx.recv() {
             Ok(notify::DebouncedEvent::Write(path)) => {
                 let file_name = path.file_name().unwrap().to_str().unwrap();
-                for candidate in whitelist.iter() {
-                    if candidate.as_str() == file_name {
-                        println!("Update {}", file_name);
-                        let file_name_without_extension = file_name
-                            .split(".lua")
-                            .next()
-                            .unwrap();
-                        update(project_name, file_name_without_extension);
-                        break;
+                if file_name == "restart" {
+                    restart(project_name);
+                } else {
+                    for candidate in whitelist.iter() {
+                        if candidate.as_str() == file_name {
+                            println!("Update {}", file_name);
+                            let basename = file_name
+                                .split(".lua")
+                                .next()
+                                .unwrap();
+                            update(project_name, basename);
+                            break;
+                        }
                     }
                 }
             },
+            Ok(notify::DebouncedEvent::Create(path)) => {
+                restart_helper(project_name, &path);
+            },
+            Ok(notify::DebouncedEvent::NoticeWrite(path)) => {
+                restart_helper(project_name, &path);
+            },
+            Ok(notify::DebouncedEvent::Chmod(path)) => {
+                restart_helper(project_name, &path);
+            },
+            Ok(event) => {
+                println!("{:#?}", event);
+            },
             Err(error) => println!("error: {:#?}", error),
-            _ => {},
         }
     }
 }
@@ -147,4 +173,3 @@ fn main() {
     let whitelist = load(&project_name);
     main_loop(&project_name, whitelist.as_slice());
 }
-
