@@ -1,9 +1,25 @@
 #[macro_use]
 extern crate json;
+extern crate promptly;
 extern crate reqwest;
+extern crate rustyline;
 extern crate scraper;
 
+use promptly::Prompter;
 use std::env;
+
+struct ProjectSelector(Vec<String>);
+
+impl rustyline::completion::Completer for ProjectSelector {
+    fn complete(&self, line: &str, _: usize) -> rustyline::Result<(usize, Vec<String>)> {
+        let completions = self.0
+            .iter()
+            .filter(|name| name.starts_with(&line))
+            .map(|name| name.to_string())
+            .collect();
+        Ok((0, completions))
+    }
+}
 
 const REMOTE_URL: &'static str = "http://192.168.0.10:42000";
 
@@ -32,7 +48,7 @@ fn update(project_name: &str, file_name: &str) {
     println!("{:#?}", response);
 }
 
-fn contents() {
+fn contents() -> Vec<String> {
     println!("GET {}", REMOTE_URL);
     let mut response = reqwest::get(REMOTE_URL).unwrap();
     let text = response.text().unwrap();
@@ -40,8 +56,7 @@ fn contents() {
 
     let document = scraper::Html::parse_document(&text);
     let selector = scraper::Selector::parse("div.project-title").unwrap();
-    let project_names: Vec<String> = document.select(&selector).map(|node| node.inner_html()).collect();
-    println!("{:#?}", project_names);
+    document.select(&selector).map(|node| node.inner_html()).collect()
 }
 
 fn open(project_name: &str, file_name: Option<&str>) {
@@ -66,8 +81,18 @@ fn main() {
         Some("restart") => restart("Test"),
         Some("update") => update("Test", "Main"),
         Some("open") => open("Test", None),
-        Some("contents") => contents(),
-        _ => println!("usage: <restart/update/open/contents> [path]"),
+        Some("contents") => {
+            let project_names = contents();
+            println!("{:#?}", project_names);
+        },
+        Some(_) => println!("usage: <restart/update/open/contents>"),
+        None => {
+            let project_names = contents();
+            let project_selector = ProjectSelector(project_names);
+            let mut prompter = Prompter::with_completer(project_selector);
+            let project_name = prompter.prompt_once("Open project");
+            open(&project_name, None);
+        },
     }
 }
 
