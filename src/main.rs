@@ -123,6 +123,25 @@ fn restart_helper(project_name: &str, path: &path::Path) {
     }
 }
 
+fn update_helper(project_name: &str, path: &path::Path, whitelist: &[String]) {
+    let file_name = path.file_name().unwrap().to_str().unwrap();
+    if file_name == "restart" {
+        restart(project_name);
+    } else {
+        for candidate in whitelist.iter() {
+            if candidate.as_str() == file_name {
+                println!("Update {}", file_name);
+                let basename = file_name
+                    .split(".lua")
+                    .next()
+                    .unwrap();
+                update(project_name, basename);
+                break;
+            }
+        }
+    }
+}
+
 fn main_loop(project_name: &str, whitelist: &[String]) {
     let (tx, rx) = channel();
     let mut watcher = notify::watcher(tx, Duration::from_secs(1)).unwrap();
@@ -130,22 +149,10 @@ fn main_loop(project_name: &str, whitelist: &[String]) {
     loop {
         match rx.recv() {
             Ok(notify::DebouncedEvent::Write(path)) => {
-                let file_name = path.file_name().unwrap().to_str().unwrap();
-                if file_name == "restart" {
-                    restart(project_name);
-                } else {
-                    for candidate in whitelist.iter() {
-                        if candidate.as_str() == file_name {
-                            println!("Update {}", file_name);
-                            let basename = file_name
-                                .split(".lua")
-                                .next()
-                                .unwrap();
-                            update(project_name, basename);
-                            break;
-                        }
-                    }
-                }
+                update_helper(project_name, &path, whitelist);
+            },
+            Ok(notify::DebouncedEvent::NoticeRemove(path)) => {
+                update_helper(project_name, &path, whitelist);
             },
             Ok(notify::DebouncedEvent::Create(path)) => {
                 restart_helper(project_name, &path);
