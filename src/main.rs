@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate json;
 extern crate reqwest;
+extern crate scraper;
 
 use std::env;
 
@@ -36,7 +37,11 @@ fn contents() {
     let mut response = reqwest::get(REMOTE_URL).unwrap();
     let text = response.text().unwrap();
     println!("{:#?}", response);
-    println!("{:#?}", text);
+
+    let document = scraper::Html::parse_document(&text);
+    let selector = scraper::Selector::parse("div.project-title").unwrap();
+    let project_names: Vec<String> = document.select(&selector).map(|node| node.inner_html()).collect();
+    println!("{:#?}", project_names);
 }
 
 fn open(project_name: &str, file_name: Option<&str>) {
