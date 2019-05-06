@@ -5,8 +5,15 @@ use promptly::Prompter;
 use std::{fs, io, path};
 use std::sync::mpsc::channel;
 use std::time::Duration;
+use structopt::StructOpt;
 
-const REMOTE_URL: &'static str = "http://192.168.0.10:42000";
+#[derive(StructOpt)]
+#[structopt(name = "aircode-client", about = "Unofficial aircode client")]
+struct Options {
+    /// Aircode URL.
+    #[structopt(short = "u", long = "url")]
+    url: String,
+}
 
 struct ProjectSelector(Vec<String>);
 
@@ -33,8 +40,8 @@ fn read_to_string<P>(path: P) -> io::Result<String>
     Ok(contents)
 }
 
-fn update(project_name: &str, basename: &str) {
-    let url = format!("{}/projects/{}/__update", REMOTE_URL, project_name);
+fn update(options: &Options, project_name: &str, basename: &str) {
+    let url = format!("{}/projects/{}/__update", options.url, project_name);
     println!("POST {}", url);
     let path = format!("project/{}.lua", basename);
     let code = read_to_string(&path).unwrap();
@@ -46,9 +53,9 @@ fn update(project_name: &str, basename: &str) {
     println!("{:#?}", response);
 }
 
-fn contents() -> Vec<String> {
-    println!("GET {}", REMOTE_URL);
-    let mut response = reqwest::get(REMOTE_URL).unwrap();
+fn contents(options: &Options) -> Vec<String> {
+    println!("GET {}", options.url);
+    let mut response = reqwest::get(&options.url).unwrap();
     let text = response.text().unwrap();
     println!("{:#?}", response);
 
@@ -57,8 +64,8 @@ fn contents() -> Vec<String> {
     document.select(&selector).map(|node| node.inner_html()).collect()
 }
 
-fn load(project_name: &str) -> Vec<String> {
-    let url = format!("{}/projects/{}/Main", REMOTE_URL, project_name);
+fn load(options: &Options, project_name: &str) -> Vec<String> {
+    let url = format!("{}/projects/{}/Main", options.url, project_name);
     println!("GET {}", &url);
     let mut response = reqwest::get(&url).unwrap();
     let text = response.text().unwrap();
@@ -69,17 +76,17 @@ fn load(project_name: &str) -> Vec<String> {
     let selector = scraper::Selector::parse("li:not(.backarrow)").unwrap();
     for node in document.select(&selector) {
         let file_name = node.inner_html();
-        read(project_name, &file_name);
+        read(options, project_name, &file_name);
         whitelist.push(format!("{}.lua", file_name));
     }
 
     whitelist
 }
 
-fn read(project_name: &str, basename: &str) {
+fn read(options: &Options, project_name: &str, basename: &str) {
     use io::Write;
 
-    let url = format!("{}/projects/{}/{}", REMOTE_URL, project_name, basename);
+    let url = format!("{}/projects/{}/{}", options.url, project_name, basename);
     println!("GET {}", &url);
     let mut response = reqwest::get(&url).unwrap();
     let text = response.text().unwrap();
@@ -101,27 +108,27 @@ fn clear() {
     fs::File::create("project/restart").unwrap();
 }
 
-fn restart(project_name: &str) {
-    let url = format!("{}/projects/{}/__restart", REMOTE_URL, project_name);
+fn restart(options: &Options, project_name: &str) {
+    let url = format!("{}/projects/{}/__restart", options.url, project_name);
     println!("GET {}", &url);
     let response = reqwest::get(&url).unwrap();
     println!("{:#?}", response);
 }
 
-fn restart_helper(project_name: &str, path: &path::Path) {
+fn restart_helper(options: &Options, project_name: &str, path: &path::Path) {
     if let Some(os_str) = path.file_name() {
         if let Some(name) = os_str.to_str() {
             if name == "restart" {
-                restart(project_name);
+                restart(options, project_name);
             }
         }
     }
 }
 
-fn update_helper(project_name: &str, path: &path::Path, whitelist: &[String]) {
+fn update_helper(options: &Options, project_name: &str, path: &path::Path, whitelist: &[String]) {
     let file_name = path.file_name().unwrap().to_str().unwrap();
     if file_name == "restart" {
-        restart(project_name);
+        restart(options, project_name);
     } else {
         for candidate in whitelist.iter() {
             if candidate.as_str() == file_name {
@@ -130,14 +137,14 @@ fn update_helper(project_name: &str, path: &path::Path, whitelist: &[String]) {
                     .split(".lua")
                     .next()
                     .unwrap();
-                update(project_name, basename);
+                update(options, project_name, basename);
                 break;
             }
         }
     }
 }
 
-fn main_loop(project_name: &str, whitelist: &[String]) {
+fn main_loop(options: &Options, project_name: &str, whitelist: &[String]) {
     let (tx, rx) = channel();
     let poll_delay = Duration::from_millis(250); // Poll every quarter of a second.
     let mut watcher = notify::watcher(tx, poll_delay).unwrap();
@@ -145,19 +152,19 @@ fn main_loop(project_name: &str, whitelist: &[String]) {
     loop {
         match rx.recv() {
             Ok(notify::DebouncedEvent::Write(path)) => {
-                update_helper(project_name, &path, whitelist);
+                update_helper(options, project_name, &path, whitelist);
             },
             Ok(notify::DebouncedEvent::NoticeRemove(path)) => {
-                update_helper(project_name, &path, whitelist);
+                update_helper(options, project_name, &path, whitelist);
             },
             Ok(notify::DebouncedEvent::Create(path)) => {
-                restart_helper(project_name, &path);
+                restart_helper(options, project_name, &path);
             },
             Ok(notify::DebouncedEvent::NoticeWrite(path)) => {
-                restart_helper(project_name, &path);
+                restart_helper(options, project_name, &path);
             },
             Ok(notify::DebouncedEvent::Chmod(path)) => {
-                restart_helper(project_name, &path);
+                restart_helper(options, project_name, &path);
             },
             Ok(event) => {
                 println!("{:#?}", event);
@@ -168,11 +175,12 @@ fn main_loop(project_name: &str, whitelist: &[String]) {
 }
 
 fn main() {
-    let project_names = contents();
+    let options = Options::from_args();
+    let project_names = contents(&options);
     let project_selector = ProjectSelector(project_names);
     let mut prompter = Prompter::with_completer(project_selector);
     let project_name = prompter.prompt_once("Open project");
     clear();
-    let whitelist = load(&project_name);
-    main_loop(&project_name, whitelist.as_slice());
+    let whitelist = load(&options, &project_name);
+    main_loop(&options, &project_name, whitelist.as_slice());
 }
