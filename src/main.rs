@@ -1,4 +1,5 @@
 use json::object;
+use marksman_escape::Unescape;
 use notify::Watcher;
 use promptly::Prompter;
 use std::{fs, io, path};
@@ -88,9 +89,10 @@ fn read(project_name: &str, basename: &str) {
     let selector = scraper::Selector::parse("div#editor").unwrap();
     let node = document.select(&selector).next().unwrap();
     let code = node.inner_html();
+    let unescaped_code = String::from_utf8(Unescape::new(code.bytes()).collect()).unwrap();
     let path = format!("project/{}.lua", basename);
     let mut file = fs::File::create(&path).unwrap();
-    file.write_all(code.as_bytes()).unwrap();
+    file.write_all(unescaped_code.as_bytes()).unwrap();
 }
 
 fn clear() {
