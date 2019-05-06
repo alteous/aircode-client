@@ -6,7 +6,7 @@ authors = ["David Harvey-Macaulay <alteous@outlook.com>"]
 [dependencies]
 json = "0.11"
 notify = "4.0"
-promptly = "0.1.5"
+promptly = "0.1"
 reqwest = "0.9"
-rustyline = "1.0.0"
-scraper = "0.7"
+rustyline = "1.0"
+scraper = "0.10"
