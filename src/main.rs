@@ -1,11 +1,4 @@
-#[macro_use]
-extern crate json;
-extern crate notify;
-extern crate promptly;
-extern crate reqwest;
-extern crate rustyline;
-extern crate scraper;
-
+use json::object;
 use notify::Watcher;
 use promptly::Prompter;
 use std::{fs, io, path};

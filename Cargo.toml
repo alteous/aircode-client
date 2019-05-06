@@ -2,6 +2,7 @@
 name = "aircode-client"
 version = "0.1.0"
 authors = ["David Harvey-Macaulay <alteous@outlook.com>"]
+edition = "2018"
 
 [dependencies]
 json = "0.11"
